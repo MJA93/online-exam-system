@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>الاختبار</title></head>
+<body style="background-color:#1f2937;color:#d1d5db;font-family:'Cairo',sans-serif;text-align:right;padding:40px;">
+<h2>📝 الاختبار - {{ user_name }}</h2>
+<h4>⏳ الوقت المتبقي: {{ minutes }} دقيقة و {{ seconds }} ثانية</h4>
+<form method="post">{% for i, q in enumerate(questions) %}
+<p><b>{{ i+1 }}. {{ q.question }}</b><br>
+{% if q.type == 'mcq' %}
+{% for opt in q.options %}<input type="radio" name="q{{ i }}" value="{{ opt }}"> {{ opt }}<br>{% endfor %}
+{% elif q.type == 'true_false' %}
+<input type="radio" name="q{{ i }}" value="صحيح"> صحيح<br>
+<input type="radio" name="q{{ i }}" value="خطأ"> خطأ<br>
+{% elif q.type == 'text' %}
+<input type="text" name="q{{ i }}"><br>{% endif %}</p>{% endfor %}
+<button type="submit">📩 إرسال</button></form>
+</body></html>

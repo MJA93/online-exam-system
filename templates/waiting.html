@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>انتظار بدء الاختبار</title>
+<style>body{background-color:#1f2937;color:#d1d5db;font-family:'Cairo',sans-serif;text-align:center;padding-top:50px;}
+.circle{margin:auto;width:200px;height:200px;border-radius:50%;background-color:#374151;display:flex;align-items:center;justify-content:center;font-size:24px;}
+</style></head>
+<body>
+<h2>⌛ الرجاء الانتظار</h2>
+<p>⏳ الوقت المتبقي على بداية الاختبار</p>
+<div class="circle" id="countdown">00:00:00</div>
+<script>
+let target = new Date("2025-06-22T07:30:00+03:00").getTime();
+setInterval(() => {
+    let now = new Date().getTime(), d = target - now;
+    if (d <= 0) return location.href='/login';
+    let h = Math.floor(d / (1000*60*60)), m = Math.floor((d%(1000*60*60))/(1000*60)), s = Math.floor((d%(1000*60))/1000);
+    document.getElementById('countdown').textContent = h+":"+m.toString().padStart(2,'0')+":"+s.toString().padStart(2,'0');
+}, 1000);
+</script>
+</body></html>
