@@ -12,88 +12,113 @@ ksa_tz = pytz.timezone("Asia/Riyadh")
 OFFICIAL_START_TIME = ksa_tz.localize(datetime(2025, 6, 22, 7, 30, 0))
 TEST_DURATION_MINUTES = 20
 
-# تحميل البيانات من Excel
+# تحميل ملفات Excel
 participants_df = pd.read_excel("نموذج_المشاركين.xlsx")
 questions_df = pd.read_excel("نموذج_الأسئلة.xlsx")
 
 # تحويل المشاركين إلى dict
-participants = {str(row["رقم الهوية"]): row["الاسم"] for _, row in participants_df.iterrows()}
+participants = {
+    str(row["رقم الهوية"]).strip(): row["الاسم"]
+    for _, row in participants_df.iterrows()
+}
 
-# تحويل الأسئلة إلى قائمة
+# تجهيز الأسئلة
 questions = []
 for _, row in questions_df.iterrows():
-    q = {"question": row["السؤال"], "type": row["النوع"]}
-    if row["النوع"] == "mcq":
-        q["options"] = [row["خيار1"], row["خيار2"], row["خيار3"], row["خيار4"]]
-    questions.append(q)
+    q_type = row["النوع"].strip().lower()
+    question_entry = {
+        "question": str(row["السؤال"]).strip(),
+        "type": q_type
+    }
+    if q_type == "mcq":
+        # تفصيل الخيارات بفواصل
+        options = [opt.strip() for opt in str(row["الخيارات"]).split(",")]
+        question_entry["options"] = options
+    elif q_type == "true_false":
+        question_entry["options"] = ["صح", "خطأ"]
+    questions.append(question_entry)
 
-@app.route('/')
-def wait_page():
-    now = datetime.now(ksa_tz)
-    if now >= OFFICIAL_START_TIME:
-        return redirect(url_for('login'))
-    return render_template('waiting.html', start_time=OFFICIAL_START_TIME.isoformat())
 
-@app.route('/login', methods=['GET', 'POST'])
+@app.route("/", methods=["GET", "POST"])
 def login():
     error = None
-    if request.method == 'POST':
-        user_id = request.form['user_id'].strip()
-        user_name = request.form['user_name'].strip()
-        if not user_id.isdigit() or len(user_id) != 10:
-            error = "رقم الهوية يجب أن يكون 10 أرقام"
-        elif user_id in participants:
-            session['user_id'] = user_id
-            session['user_name'] = user_name
-            return redirect(url_for('start'))
+    if request.method == "POST":
+        name = request.form["name"].strip()
+        id_number = request.form["id"].strip()
+
+        if not id_number.isdigit() or len(id_number) > 10:
+            error = "رقم الهوية يجب ألا يتجاوز 10 أرقام."
+        elif id_number not in participants:
+            error = "رقم الهوية غير مسجل."
+        elif participants[id_number] != name:
+            error = "الاسم لا يطابق رقم الهوية."
         else:
-            error = "رقم الهوية غير موجود أو غير مطابق"
-    return render_template('login.html', error=error)
+            session["id"] = id_number
+            session["name"] = name
+            return redirect(url_for("waiting"))
 
-@app.route('/start', methods=['GET', 'POST'])
-def start():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
+    return render_template("login.html", error=error)
 
-    if request.method == 'POST':
-        session['start_time'] = datetime.now(ksa_tz).isoformat()
-        return redirect(url_for('exam'))
 
-    return render_template('start.html', user_name=session['user_name'])
+@app.route("/waiting")
+def waiting():
+    if "id" not in session:
+        return redirect(url_for("login"))
 
-@app.route('/exam', methods=['GET', 'POST'])
-def exam():
-    if 'user_id' not in session or 'start_time' not in session:
-        return redirect(url_for('login'))
-
-    start_time = datetime.fromisoformat(session['start_time'])
     now = datetime.now(ksa_tz)
-    elapsed = (now - start_time).total_seconds()
-    remaining = TEST_DURATION_MINUTES * 60 - elapsed
-
+    remaining = (OFFICIAL_START_TIME - now).total_seconds()
     if remaining <= 0:
-        return redirect(url_for('submitted'))
+        return redirect(url_for("start_exam"))
+    return render_template("waiting.html", remaining=int(remaining), name=session["name"])
 
-    minutes = int(remaining // 60)
-    seconds = int(remaining % 60)
 
-    if request.method == 'POST':
-        answers = {}
-        for i in range(len(questions)):
-            answers[f"Q{i+1}"] = request.form.get(f"q{i}", "")
-        session['answers'] = answers
-        return redirect(url_for('submitted'))
+@app.route("/start")
+def start_exam():
+    if "id" not in session:
+        return redirect(url_for("login"))
 
-    return render_template('exam.html', questions=questions, minutes=minutes, seconds=seconds)
+    session["start_time"] = datetime.now(ksa_tz).isoformat()
+    return render_template("start_exam.html", name=session["name"])
 
-@app.route('/submitted')
+
+@app.route("/exam", methods=["GET", "POST"])
+def exam():
+    if "id" not in session:
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        answers = request.form.to_dict()
+        session["answers"] = answers
+        return redirect(url_for("submitted"))
+
+    start_time = datetime.fromisoformat(session["start_time"])
+    elapsed = (datetime.now(ksa_tz) - start_time).total_seconds()
+    remaining = TEST_DURATION_MINUTES * 60 - elapsed
+    if remaining <= 0:
+        return redirect(url_for("submitted"))
+
+    return render_template("exam.html", questions=questions, remaining=int(remaining))
+
+
+@app.route("/submitted")
 def submitted():
-    if 'answers' not in session:
-        return redirect(url_for('login'))
+    if "id" not in session:
+        return redirect(url_for("login"))
 
-    # هنا يمكن لاحقًا ربط الإرسال إلى Google Sheets
-    return render_template('submitted.html', user_name=session.get('user_name'))
+    # حفظ الأجوبة في ملف نصي أو أي معالجة لاحقة
+    id_ = session["id"]
+    name = session["name"]
+    answers = session.get("answers", {})
+
+    filename = f"answers_{id_}.txt"
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write(f"الاسم: {name}\nرقم الهوية: {id_}\n\n")
+        for i, q in enumerate(questions):
+            f.write(f"س{ i+1 }: {q['question']}\n")
+            f.write(f"الإجابة: {answers.get(f'q{i+1}', '')}\n\n")
+
+    return render_template("submitted.html", name=name)
+
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(debug=True)
